@@ -22,10 +22,10 @@
 debug=false
 
 # Working directory for the script
-ytdl_root_dir="${HOME}/ytdlrc"
+ytdl_root_dir="${HOME}/Dropbox/backup/ytdlrc"
 
 # Where to download files before moving them to the rclone remote
-ytdl_download_dir="${ytdl_root_dir%/}/stage"
+ytdl_download_dir="${HOME}/Videos"
 
 # List of URL's / channels / playlists to download, e.g.:
 #     * `ytuser:username`
@@ -46,7 +46,7 @@ ytdl_output_template="%(uploader)s.%(upload_date)s.%(title)s.%(resolution)s.%(id
 # Write metadata to file's xattrs?
 #     * Requires the `attr` package and a filesystem that supports extended
 #       attributes
-ytdl_write_metadata_to_xattrs=false
+ytdl_write_metadata_to_xattrs=true
 
 # Write subtitle file (if available)
 ytdl_write_subtitles=true
@@ -68,6 +68,9 @@ ytdl_subtitle_format="srt/best"
 #     * Use `youtube-dl --list-subs` to view available language tags
 #     * Ignored if `ytdl_write_all_subtitles=true`
 ytdl_subtitle_lang="en"
+
+# Embed subtitles in file
+ytdl_subtitle_embed=true
 
 # What value to grab from the first video in a playlist
 #     * This affects the directory hierarchy on the rclone remote, e.g.:
@@ -104,10 +107,10 @@ ytdl_lowercase_directories=false
 rclone_config="${HOME}/.config/rclone/rclone.conf"
 
 # Should we `copy` or `move` files?
-rclone_command="move"
+rclone_command="copy"
 
 # Where to store downloaded files on the rclone remote
-rclone_destination="remote:archive/youtube"
+rclone_destination="perceptor:/mnt/media/Video/YouTube"
 
 # Rclone flags
 #     * Add any additional rclone flags here, e.g.: "--syslog --bwlimit 5M"
@@ -186,7 +189,7 @@ get_video_value() {
   say_debug "Grabbing '${1}' from '${3}'..."
 
   video_value=$(
-    youtube-dl \
+    yt-dlp \
       --force-ipv4 \
       --get-filename \
       --output "%(${1})s" \
@@ -203,7 +206,7 @@ get_video_value() {
 
 download_all_the_things() {
   # shellcheck disable=SC2086
-  youtube-dl \
+  yt-dlp \
     --force-ipv4 \
     --continue \
     --download-archive "$ytdl_archive_list" \
@@ -213,7 +216,6 @@ download_all_the_things() {
       $rclone_flags \
       $rclone_debug_flags" \
     --format "$ytdl_format" \
-    --ignore-config \
     --ignore-errors \
     --no-overwrites \
     --output "${ytdl_download_dir%/}/${video_value}/${ytdl_output_template}" \
@@ -221,6 +223,12 @@ download_all_the_things() {
     --write-description \
     --write-info-json \
     --write-thumbnail \
+    --sleep-request 1 \
+    --sleep-interval 5 \
+    --max-sleep-interval 30 \
+    --extractor-args youtube:player_client=android \
+    --throttled-rate 100K \
+    --merge-output-format "mkv" \
     "$ytdl_debug_flags" \
     $ytdl_subtitle_flags \
     $ytdl_xattrs_flag \
@@ -345,6 +353,12 @@ if [ "$ytdl_write_subtitles" = true ] || [ "$ytdl_write_automatic_subtitles" = t
     ytdl_subtitle_flags="${ytdl_subtitle_flags} --sub-lang ${ytdl_subtitle_lang}"
   fi
 
+  # Set `youtube-dl` flags for embedding subtitles in the file
+  if [ "$ytdl_subtitle_embed" = true ]; then
+      # Append `--embed-subs` flag
+      ytdl_subtitle_flags="${ytdl_subtitle_flags} --embed-subs"
+  fi
+
 fi
 
 
@@ -428,7 +442,7 @@ fi
 
 
 say_debug "Checking required commands..."
-required_commands="youtube-dl ffmpeg rclone"
+required_commands="yt-dlp ffmpeg rclone"
 for cmd in $required_commands; do
   if ! command_exists "$cmd"; then
     say_error "Command not found: ${cmd}"
@@ -588,4 +602,3 @@ fi
 
 say "Process completed at $(date --iso-8601=seconds)."
 delete_lock_file
-
